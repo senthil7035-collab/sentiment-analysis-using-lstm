@@ -1,0 +1,223 @@
+import os
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Embedding, LSTM, Dense, Dropout
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from sklearn.model_selection import train_test_split
+
+# =====================================================
+# 1. LOAD DATASET
+# =====================================================
+
+print("Loading Dataset...")
+
+dataset_path = r"archive (1)\IMDB Dataset.csv"
+
+if not os.path.exists(dataset_path):
+    print("Dataset not found!")
+    print("Expected:", dataset_path)
+    exit()
+
+df = pd.read_csv(dataset_path)
+
+print("\nDataset Loaded Successfully!")
+print("Shape:", df.shape)
+
+print("\nClass Distribution:")
+print(df["sentiment"].value_counts())
+
+# =====================================================
+# 2. PREPROCESS DATA
+# =====================================================
+
+df = df.dropna()
+
+df["sentiment"] = df["sentiment"].map({
+    "positive": 1,
+    "negative": 0
+})
+
+texts = df["review"].astype(str).values
+labels = df["sentiment"].values
+
+# =====================================================
+# 3. TOKENIZATION
+# =====================================================
+
+vocab_size = 20000
+maxlen = 250
+
+tokenizer = Tokenizer(
+    num_words=vocab_size,
+    oov_token="<OOV>"
+)
+
+tokenizer.fit_on_texts(texts)
+
+sequences = tokenizer.texts_to_sequences(texts)
+
+padded = pad_sequences(
+    sequences,
+    maxlen=maxlen,
+    padding="post",
+    truncating="post"
+)
+
+print("\nTokenization Completed!")
+
+# =====================================================
+# 4. TRAIN TEST SPLIT
+# =====================================================
+
+x_train, x_test, y_train, y_test = train_test_split(
+    padded,
+    labels,
+    test_size=0.2,
+    random_state=42,
+    stratify=labels
+)
+
+print("\nTraining Samples:", len(x_train))
+print("Testing Samples :", len(x_test))
+
+# =====================================================
+# 5. BUILD MODEL
+# =====================================================
+
+print("\nBuilding LSTM Model...")
+
+model = Sequential([
+    Embedding(
+        input_dim=vocab_size,
+        output_dim=128,
+        input_length=maxlen
+    ),
+
+    LSTM(
+        128,
+        dropout=0.2,
+        recurrent_dropout=0.2
+    ),
+
+    Dense(64, activation="relu"),
+    Dropout(0.3),
+
+    Dense(1, activation="sigmoid")
+])
+
+model.build(input_shape=(None, maxlen))
+
+model.compile(
+    optimizer="adam",
+    loss="binary_crossentropy",
+    metrics=["accuracy"] 
+)
+
+model.summary()
+
+# =====================================================
+# 6. TRAIN MODEL
+# =====================================================
+
+print("\nTraining Started...\n")
+
+history = model.fit(
+    x_train,
+    y_train,
+    epochs=8,
+    batch_size=64,
+    validation_split=0.2,
+    verbose=1
+)
+
+# =====================================================
+# 7. EVALUATE
+# =====================================================
+
+print("\nEvaluating Model...\n")
+
+loss, accuracy = model.evaluate(
+    x_test,
+    y_test,
+    verbose=1
+)
+
+print(f"\nTest Accuracy: {accuracy * 100:.2f}%")
+
+# =====================================================
+# 8. SAMPLE TESTS
+# =====================================================
+
+print("\nQuick Test:\n")
+
+sample_reviews = [
+    "I love this movie",
+    "I hate this movie",
+    "Best movie ever",
+    "Worst movie ever",
+    "Amazing acting and story",
+    "Terrible film and boring plot"
+]
+
+for review in sample_reviews:
+
+    seq = tokenizer.texts_to_sequences([review])
+
+    pad = pad_sequences(
+        seq,
+        maxlen=maxlen,
+        padding="post"
+    )
+
+    prediction = model.predict(
+        pad,
+        verbose=0
+    )[0][0]
+
+    sentiment = "Positive 😊" if prediction > 0.5 else "Negative 😞"
+
+    print(f"Review: {review}")
+    print(f"Prediction: {sentiment}")
+    print(f"Score: {prediction:.4f}")
+    print("-" * 50)
+
+# =====================================================
+# 9. CUSTOM INPUT
+# =====================================================
+
+while True:
+
+    review = input("\nEnter a movie review (type exit to quit): ")
+
+    if review.lower() == "exit":
+        break
+
+    seq = tokenizer.texts_to_sequences([review])
+
+    pad = pad_sequences(
+        seq,
+        maxlen=maxlen,
+        padding="post"
+    )
+
+    prediction = model.predict(
+        pad,
+        verbose=0
+    )[0][0]
+
+    if prediction > 0.5:
+        print(f"Positive 😊 ({prediction:.4f})")
+    else:
+        print(f"Negative 😞 ({prediction:.4f})")
+
+# =====================================================
+# 10. SAVE MODEL
+# =====================================================
+
+model.save("imdb_sentiment_lstm.keras")
+
+print("\nModel saved as imdb_sentiment_lstm.keras")
